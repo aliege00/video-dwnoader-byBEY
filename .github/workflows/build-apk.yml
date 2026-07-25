@@ -1,19 +1,24 @@
-name: Build APK
+name: Build APK & EXE
 
 on:
   push:
     branches: [main, master]
-  pull_request:
-    branches: [main, master]
-  workflow_dispatch: # Manual trigger
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
-  build:
+  build-android:
+    name: 📱 Build Android APK
     runs-on: ubuntu-latest
+    outputs:
+      apk_path: ${{ steps.check-apk.outputs.apk_path }}
 
     steps:
-      - name: 📥 Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: 🟢 Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -28,15 +33,11 @@ jobs:
 
       - name: 🤖 Setup Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          api-level: 34
-          build-tools: '34.0.0'
-          ndk-version: '25.2.9519653'
 
-      - name: 📦 Install dependencies
-        run: bun install
+      - name: 📦 Install
+        run: bun install --frozen-lockfile 2>/dev/null || bun install
 
-      - name: 🏗️ Build web app
+      - name: 🏗️ Build web
         run: bun run build
 
       - name: 🔄 Sync Capacitor
@@ -47,45 +48,106 @@ jobs:
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
-        env:
-          ANDROID_HOME: ${{ env.ANDROID_HOME || '/usr/local/lib/android/sdk' }}
 
-      - name: 📤 Upload APK
+      - name: 📤 Copy APK to downloads
+        run: |
+          mkdir -p downloads
+          cp android/app/build/outputs/apk/debug/app-debug.apk downloads/video-downloader.apk
+          echo "APK_SIZE=$(stat -c%s downloads/video-downloader.apk)" >> $GITHUB_OUTPUT
+        id: check-apk
+
+      - name: 📤 Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: video-downloader-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          path: downloads/video-downloader.apk
 
-      - name: 📤 Upload APK (signed release)
-        continue-on-error: true
-        run: |
-          if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
-            cp android/app/build/outputs/apk/release/app-release.apk video-downloader-release.apk
-          fi
+  build-windows:
+    name: 🪟 Build Windows EXE
+    runs-on: windows-latest
 
-      - name: 📏 Check APK size
-        run: |
-          if [ -f android/app/build/outputs/apk/debug/app-debug.apk ]; then
-            APK_SIZE=$(stat -c%s "android/app/build/outputs/apk/debug/app-debug.apk")
-            APK_SIZE_MB=$(echo "scale=2; $APK_SIZE / 1048576" | bc)
-            echo "✅ APK ready! Size: ${APK_SIZE_MB}MB"
-          fi
+    steps:
+      - uses: actions/checkout@v4
 
-      - name: 💬 Comment APK download link on PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+      - name: 🟢 Setup Bun
+        uses: oven-sh/setup-bun@v2
         with:
-          script: |
-            const fs = require('fs');
-            const apkPath = 'android/app/build/outputs/apk/debug/app-debug.apk';
-            if (fs.existsSync(apkPath)) {
-              const apkSize = fs.statSync(apkPath).size;
-              const sizeMB = (apkSize / 1048576).toFixed(2);
-              github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: `## 📱 APK Ready!\n\nAPK has been built successfully.\n\n**Size:** ${sizeMB} MB\n\nDownload the APK from the **Artifacts** section above (click on the build, then download \`video-downloader-apk\`).`
-              });
-            }
+          bun-version: latest
+
+      - name: 📦 Install
+        run: bun install --frozen-lockfile 2>/dev/null || bun install
+
+      - name: 🏗️ Build web
+        run: bun run build
+
+      - name: 🔧 Install electron-builder globally
+        run: bun install -g electron-builder
+
+      - name: 🪟 Build EXE
+        run: bun run build:exe
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📤 Copy EXEs to downloads
+        run: |
+          New-Item -ItemType Directory -Force -Path downloads
+          if (Test-Path "dist_electron/*.exe") {
+            Copy-Item "dist_electron/*.exe" downloads/
+          }
+          if (Test-Path "dist_electron/*.exe") {
+            echo "EXE_FOUND=true" | Out-File -FilePath $env:GITHUB_ENV -Append
+          }
+
+      - name: 📤 Upload EXE artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-downloader-exe
+          path: downloads/*.exe
+
+  publish:
+    name: 📦 Publish Release
+    needs: [build-android, build-windows]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 📥 Download APK
+        uses: actions/download-artifact@v4
+        with:
+          name: video-downloader-apk
+          path: downloads/
+
+      - name: 📥 Download EXE
+        uses: actions/download-artifact@v4
+        with:
+          name: video-downloader-exe
+          path: downloads/
+        continue-on-error: true
+
+      - name: 🏷️ Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Video Downloader Pro v1.0.${{ github.run_number }}
+          body: |
+            ## 📥 Video Downloader Pro v1.0.${{ github.run_number }}
+
+            **Yenilikler:** Otomatik derleme
+
+            ### 📱 Android
+            - `video-downloader.apk` — Telefona kur, video indir
+
+            ### 🪟 Windows
+            - `Video-Downloader-Setup.exe` — Kurulumlu
+            - `Video-Downloader-Portable.exe` — Taşınabilir (USB'den çalışır)
+
+            **Nasıl kullanılır:** Videoyu indir → Kur/Kopyala → Link yapıştır → İndir! 🎉
+          files: |
+            downloads/video-downloader.apk
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

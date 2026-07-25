@@ -1,0 +1,35 @@
+appId: com.videodownloader.desktop
+productName: Video Downloader Pro
+copyright: Copyright © 2026
+
+directories:
+  output: dist_electron
+  buildResources: public
+
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+    - target: nsis
+      arch:
+        - x64
+  icon: public/icon.svg
+  artifactName: "Video-Downloader-${version}-win-${arch}.${ext}"
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Video Downloader Pro
+
+portable:
+  artifactName: "Video-Downloader-${version}-portable.exe"
+
+extraMetadata:
+  main: electron/main.cjs
