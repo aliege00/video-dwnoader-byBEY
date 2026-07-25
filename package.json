@@ -6,9 +6,16 @@
   "scripts": {
     "dev": "vite",
     "build": "bunx vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "cap:sync": "bunx cap sync",
+    "cap:open:android": "bunx cap open android",
+    "build:android": "bun run build && bun run cap:sync && echo 'Android project ready!'",
+    "build:apk": "bun run build && bun run cap:sync && cd android && ./gradlew assembleDebug"
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/cli": "^8.4.2",
+    "@capacitor/core": "^8.4.2",
     "framer-motion": "^11.18.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
