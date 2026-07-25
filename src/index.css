@@ -1,0 +1,118 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 20% 97%;
+    --foreground: 220 15% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 15% 10%;
+    --primary: 246 80% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 15% 92%;
+    --secondary-foreground: 220 15% 20%;
+    --accent: 246 80% 60%;
+    --accent-foreground: 0 0% 100%;
+    --muted: 220 15% 92%;
+    --muted-foreground: 220 10% 45%;
+    --border: 220 15% 85%;
+    --ring: 246 80% 60%;
+    --success: 142 76% 36%;
+    --warning: 38 92% 50%;
+    --error: 0 84% 60%;
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 220 25% 7%;
+    --foreground: 220 10% 90%;
+    --card: 220 25% 10%;
+    --card-foreground: 220 10% 90%;
+    --primary: 246 70% 65%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 20% 15%;
+    --secondary-foreground: 220 10% 80%;
+    --accent: 246 70% 65%;
+    --accent-foreground: 0 0% 100%;
+    --muted: 220 20% 15%;
+    --muted-foreground: 220 10% 55%;
+    --border: 220 20% 20%;
+    --ring: 246 70% 65%;
+    --success: 142 70% 45%;
+    --warning: 38 92% 50%;
+    --error: 0 70% 55%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-[hsl(var(--border))];
+  }
+
+  body {
+    @apply bg-[hsl(var(--background))] text-[hsl(var(--foreground))] font-sans;
+    font-family: 'Inter', sans-serif;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-[hsl(var(--muted-foreground))]/20 rounded-full hover:bg-[hsl(var(--muted-foreground))]/30 transition-colors;
+}
+
+/* Glass morphism utility */
+.glass {
+  @apply bg-white/70 dark:bg-[hsl(var(--card))]/70 backdrop-blur-xl border border-white/20 dark:border-white/5;
+}
+
+.glass-strong {
+  @apply bg-white/80 dark:bg-[hsl(var(--card))]/80 backdrop-blur-2xl border border-white/30 dark:border-white/10;
+}
+
+/* Gradient text */
+.text-gradient {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-[hsl(var(--primary))] to-purple-400;
+}
+
+/* Download progress animation */
+@keyframes progressPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.progress-active {
+  animation: progressPulse 1.5s ease-in-out infinite;
+}
+
+/* Shimmer effect for loading */
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    hsl(var(--muted-foreground) / 0.08),
+    transparent
+  );
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+/* Smooth transitions for theme toggle */
+.theme-transition {
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
