@@ -1,18 +1,11 @@
 import { useState, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { nativePost, downloadBlob, isCapacitor } from '../utils/http'
 
 // Multiple Cobalt API instances (fallback if one is down)
 const COBALT_INSTANCES = [
   'https://co.wuk.sh/api/',
   'https://cobalt.tools/api/',
-  'https://cobalt.gq/api/',
-]
-
-// CORS proxies to bypass browser restrictions
-const CORS_PROXIES = [
-  (url: string) => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
-  (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  (url: string) => `https://corsproxy.chech.workers.dev/?${url}`,
 ]
 
 const DIRECT_VIDEO_RE = /\.(mp4|webm|avi|mov|mkv|flv|wmv|3gp)(\?.*)?$/i
@@ -69,6 +62,17 @@ async function sleep(ms: number) {
   return new Promise(r => setTimeout(r, ms))
 }
 
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 30000)
+}
+
 export default function VideoDownloader() {
   const [inputText, setInputText] = useState('')
   const [queue, setQueue] = useState<QueueItem[]>([])
@@ -113,183 +117,100 @@ export default function VideoDownloader() {
     setInputText('')
   }, [inputText, addLog])
 
-  // Download a single video via Cobalt API (tries multiple instances and proxies)
-  const downloadViaCobalt = useCallback(async (item: QueueItem, index: number): Promise<boolean> => {
-    addLog(`🌐 ${item.platform}: Video alınıyor... (${index + 1}/${queue.length})`)
+  // Download via Cobalt API using native HTTP (no CORS on APK!)
+  const downloadViaCobalt = useCallback(async (item: QueueItem, _idx: number): Promise<boolean> => {
+    addLog(`🌐 ${item.platform}: Video alınıyor... (${_idx + 1}/${queue.length})`)
     updateQueue(item.id, { status: 'processing', progress: 5 })
 
-    // Try each Cobalt instance
     for (let instIdx = 0; instIdx < COBALT_INSTANCES.length; instIdx++) {
       const apiUrl = COBALT_INSTANCES[instIdx]
       if (abortRef.current) return false
-      
+
       try {
-        addLog(`📡 API deneniyor: ${new URL(apiUrl).hostname}`)
-        updateQueue(item.id, { progress: 10 + instIdx * 10 })
-        
-        // Try direct fetch first, then via CORS proxy
-        let response: Response | null = null
-        
-        // Attempt 1: Direct fetch (works in Capacitor/Electron, may fail in browser)
-        try {
-          response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            body: JSON.stringify({
-              url: item.url,
-              videoQuality: 'max',
-              filenameStyle: 'pretty',
-              disableMetadata: true,
-            }),
-          })
-        } catch {
-          // Direct fetch failed (CORS), try via proxy
-          addLog(`🔁 Direkt bağlantı başarısız, proxy deneniyor...`)
-          
-          for (const proxy of CORS_PROXIES) {
-            try {
-              response = await fetch(proxy(apiUrl), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-                body: JSON.stringify({
-                  url: item.url,
-                  videoQuality: 'max',
-                  filenameStyle: 'pretty',
-                  disableMetadata: true,
-                }),
-              })
-              if (response.ok) break
-            } catch {}
-          }
+        const hostname = new URL(apiUrl).hostname
+        addLog(`📡 API: ${hostname} (${isCapacitor ? '📱 Native HTTP' : '🌐 Web HTTP'})`)
+        updateQueue(item.id, { progress: 10 + instIdx * 15 })
+
+        // Uses nativePost which tries CapacitorHttp → fetch → CORS proxy
+        const resp = await nativePost(apiUrl, {
+          url: item.url,
+          videoQuality: 'max',
+          filenameStyle: 'pretty',
+          disableMetadata: true,
+        })
+
+        if (resp.status !== 200 && resp.status !== 201) {
+          throw new Error(`API yanıt vermedi (${resp.status})`)
         }
 
-        if (!response || !response.ok) {
-          const status = response?.status || 'bağlantı hatası'
-          throw new Error(`API yanıt vermedi (${status})`)
-        }
-
-        const data = await response.json()
+        const data = resp.data
         updateQueue(item.id, { progress: 50 })
-        
+
         if (data.status === 'error' || data.status === 'rate-limit') {
           throw new Error(data.text || 'API limit aşıldı')
         }
-
-        if (!data.url) {
-          throw new Error('İndirme linki alınamadı')
-        }
+        if (!data.url) throw new Error('İndirme linki alınamadı')
 
         const videoUrl = data.url
         const filename = data.filename || `video-${Date.now()}.mp4`
-
-        addLog(`📥 Video bulundu, indiriliyor...`)
+        addLog(`📥 Video bulundu: ${filename}`)
         updateQueue(item.id, { progress: 60, filename })
 
-        // Try to download the video file
-        let downloaded = false
-        
-        // Method 1: Direct download via fetch (CORS issues in browser)
+        // Download video file using native HTTP (no CORS on APK!)
         try {
-          const vidResp = await fetch(videoUrl, { mode: 'cors' })
-          if (vidResp.ok) {
-            const blob = await vidResp.blob()
-            if (blob.size > 1000) {
-              const blobUrl = URL.createObjectURL(blob)
-              const a = document.createElement('a')
-              a.href = blobUrl
-              a.download = filename
-              document.body.appendChild(a)
-              a.click()
-              a.remove()
-              setTimeout(() => URL.revokeObjectURL(blobUrl), 30000)
-              downloaded = true
-              updateQueue(item.id, { progress: 100 })
-              addLog(`✅ ${filename} indirildi! (${(blob.size / 1048576).toFixed(1)} MB)`)
-            }
+          const blob = await downloadBlob(videoUrl)
+          if (blob.size > 1000) {
+            triggerDownload(blob, filename)
+            updateQueue(item.id, { status: 'done', progress: 100 })
+            addLog(`✅ ${filename} indirildi! (${(blob.size / 1048576).toFixed(1)} MB)`)
+            return true
           }
         } catch {}
 
-        // Method 2: Open in new tab (works even with CORS)
-        if (!downloaded) {
-          addLog(`🔗 Auto-download başarısız, link açılıyor...`)
-          window.open(videoUrl, '_blank')
-          downloaded = true
-          updateQueue(item.id, { progress: 100 })
-          addLog(`✅ Video linki yeni sekmede açıldı! Tarayıcı videoyu gösterecek, sağ tıkla kaydet.`)
-        }
-
-        updateQueue(item.id, { status: 'done', progress: 100, filename })
+        // Fallback: open in browser tab
+        window.open(videoUrl, '_blank')
+        updateQueue(item.id, { status: 'done', progress: 100 })
+        addLog(`✅ Video linki açıldı! İnen videoyu kaydet.`)
         return true
+
       } catch (err: any) {
-        const msg = err.message || 'Bilinmeyen hata'
-        addLog(`⚠️ ${new URL(apiUrl).hostname}: ${msg}`)
+        addLog(`⚠️ ${err.message}`)
       }
     }
 
-    // All instances failed - provide manual option
-    addLog(`❌ Tüm API'ler başarısız. Manuel link dene: https://cobalt.tools`)
-    updateQueue(item.id, { status: 'error', error: 'Video alınamadı. cobalt.tools adresini manuel dene veya direkt video linki kullan.' })
+    addLog(`❌ Tüm API'ler başarısız`)
+    updateQueue(item.id, { status: 'error', error: 'Video alınamadı. Linki kontrol et veya cobalt.tools adresini dene.' })
     return false
   }, [queue.length, updateQueue, addLog])
 
-  // Download a direct video URL
-  const downloadDirect = useCallback(async (item: QueueItem, index: number): Promise<boolean> => {
-    addLog(`📹 Direct video alınıyor... (${index + 1}/${queue.length})`)
+  // Download direct video URL using native HTTP
+  const downloadDirect = useCallback(async (item: QueueItem, _idx: number): Promise<boolean> => {
+    addLog(`📹 Direct video: ${isCapacitor ? '📱 Native' : '🌐 Web proxy'}`)
     updateQueue(item.id, { status: 'processing', progress: 10 })
 
-    // Try multiple strategies
-    const strategies: Array<{ name: string; getUrl: () => string }> = [
-      { name: 'direct', getUrl: () => item.url },
-      ...CORS_PROXIES.map((proxy, i) => ({ name: `proxy-${i + 1}`, getUrl: () => proxy(item.url) })),
-    ]
+    try {
+      const blob = await downloadBlob(item.url)
+      if (blob.size < 100) throw new Error('Dosya çok küçük')
 
-    for (const strategy of strategies) {
-      if (abortRef.current) break
+      updateQueue(item.id, { progress: 90 })
+      let filename = `video-${Date.now()}.mp4`
       try {
-        addLog(`📡 ${strategy.name} deneniyor...`)
-        updateQueue(item.id, { progress: 20 })
-        
-        const resp = await fetch(strategy.getUrl(), {
-          headers: { Accept: 'video/*,*/*' },
-        })
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+        const p = new URL(item.url).pathname
+        const seg = p.split('/').pop()
+        if (seg?.includes('.')) filename = decodeURIComponent(seg)
+      } catch {}
 
-        const blob = await resp.blob()
-        
-        if (blob.size < 100) throw new Error('Dosya çok küçük')
-        
-        updateQueue(item.id, { progress: 90 })
-        const blobUrl = URL.createObjectURL(blob)
-
-        let filename = `video-${Date.now()}.mp4`
-        try {
-          const p = new URL(item.url).pathname
-          const seg = p.split('/').pop()
-          if (seg && seg.includes('.')) filename = decodeURIComponent(seg)
-        } catch {}
-
-        const a = document.createElement('a')
-        a.href = blobUrl
-        a.download = filename
-        document.body.appendChild(a)
-        a.click()
-        a.remove()
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 30000)
-
-        updateQueue(item.id, { status: 'done', progress: 100, filename })
-        addLog(`✅ ${filename} indirildi! (${(blob.size / 1048576).toFixed(1)} MB)`)
-        return true
-      } catch (err: any) {
-        addLog(`⚠️ ${strategy.name}: ${err.message}`)
-      }
+      triggerDownload(blob, filename)
+      updateQueue(item.id, { status: 'done', progress: 100, filename })
+      addLog(`✅ ${filename} indirildi! (${(blob.size / 1048576).toFixed(1)} MB)`)
+      return true
+    } catch (err: any) {
+      addLog(`⚠️ Auto-download başarısız: ${err.message}`)
+      window.open(item.url, '_blank')
+      updateQueue(item.id, { status: 'done', progress: 100 })
+      addLog(`✅ Link açıldı! Tarayıcıda kaydet.`)
+      return true
     }
-
-    // Fallback: open URL directly
-    addLog(`🔗 Auto-download başarısız, link açılıyor...`)
-    window.open(item.url, '_blank')
-    updateQueue(item.id, { status: 'done', progress: 100, filename: 'link-acildi' })
-    addLog(`✅ Link yeni sekmede açıldı! Sayfada sağ tıkla "Farklı Kaydet" de.`)
-    return true
   }, [updateQueue, addLog])
 
   // Download all items in queue
