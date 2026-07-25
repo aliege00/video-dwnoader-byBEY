@@ -1,6 +1,6 @@
 import { useTheme } from './hooks/useTheme'
 import ThemeToggle from './components/ThemeToggle'
-import Downloader from './components/Downloader'
+import VideoDownloader from './components/VideoDownloader'
 import { motion } from 'framer-motion'
 
 export default function App() {
@@ -17,7 +17,7 @@ export default function App() {
       {/* Navbar */}
       <header className="sticky top-0 z-50 border-b border-[hsl(var(--border))]/50">
         <div className="glass-strong">
-          <div className="max-w-6xl mx-auto px-4 sm:px-6">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6">
             <div className="flex items-center justify-between h-16">
               {/* Logo */}
               <motion.div
@@ -26,14 +26,14 @@ export default function App() {
                 className="flex items-center gap-3"
               >
                 <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[hsl(var(--primary))] to-purple-500 flex items-center justify-center shadow-lg shadow-[hsl(var(--primary))]/25">
-                  <span className="text-white text-lg font-bold">M</span>
+                  <span className="text-white text-lg font-bold">▶</span>
                 </div>
                 <div className="hidden sm:block">
                   <h2 className="font-bold text-[hsl(var(--foreground))] leading-tight">
-                    MultiDownload
+                    Video Downloader
                   </h2>
                   <p className="text-xs text-[hsl(var(--muted-foreground))] leading-tight">
-                    File Manager Pro
+                    YouTube · TikTok · Instagram · Twitter
                   </p>
                 </div>
               </motion.div>
@@ -47,7 +47,7 @@ export default function App() {
                   className="flex items-center gap-3"
                 >
                   <span className="text-xs text-[hsl(var(--muted-foreground))] hidden sm:inline">
-                    {isDark ? 'Dark' : 'Light'} mode
+                    {isDark ? 'Dark' : 'Light'}
                   </span>
                   <ThemeToggle isDark={isDark} onToggle={toggle} />
                 </motion.div>
@@ -58,18 +58,18 @@ export default function App() {
       </header>
 
       {/* Main content */}
-      <main className="py-8">
-        <Downloader />
+      <main className="py-6 sm:py-8">
+        <VideoDownloader />
       </main>
 
       {/* Footer */}
       <footer className="border-t border-[hsl(var(--border))]/50 py-6">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-[hsl(var(--muted-foreground))]">
-            <p>MultiDownload Pro — Built with React + TypeScript + Tailwind CSS</p>
+            <p>Video Downloader Pro — Powered by Cobalt API</p>
             <p className="flex items-center gap-1">
               <span className="inline-block w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              All systems operational
+              Online
             </p>
           </div>
         </div>
@@ -77,3 +77,4 @@ export default function App() {
     </div>
   )
 }
+

@@ -1,10 +1,10 @@
 {
   "name": "Video Downloader Pro",
   "short_name": "VidDown",
-  "description": "Download videos from the web directly to your phone",
+  "description": "Download videos from YouTube, TikTok, Instagram, Twitter and more",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f8f7ff",
+  "background_color": "#0f0a1a",
   "theme_color": "#8b5cf6",
   "orientation": "portrait",
   "icons": [
@@ -21,5 +21,5 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": ["utilities", "productivity"]
+  "categories": ["utilities", "productivity", "entertainment"]
 }
