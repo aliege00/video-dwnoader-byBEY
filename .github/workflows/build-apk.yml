@@ -3,19 +3,19 @@ name: Build APK & EXE
 on:
   push:
     branches: [main, master]
-    tags:
-      - 'v*'
   workflow_dispatch:
 
 permissions:
   contents: write
 
+env:
+  VERSION_CODE: ${{ github.run_number }}
+  VERSION_NAME: 1.0.${{ github.run_number }}
+
 jobs:
   build-android:
     name: 📱 Build Android APK
     runs-on: ubuntu-latest
-    outputs:
-      apk_path: ${{ steps.check-apk.outputs.apk_path }}
 
     steps:
       - uses: actions/checkout@v4
@@ -43,24 +43,53 @@ jobs:
       - name: 🔄 Sync Capacitor
         run: bunx cap sync android
 
-      - name: 📱 Build APK
+      - name: 🔑 Create keystore (if secrets set)
+        run: |
+          if [ -n "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/release.keystore
+            echo "KEYSTORE_CREATED=true" >> $GITHUB_ENV
+            echo "✅ Keystore created from secrets"
+          else
+            echo "ℹ️ No keystore secrets found, building debug APK only"
+            echo "KEYSTORE_CREATED=false" >> $GITHUB_ENV
+          fi
+
+      - name: 📱 Build APKs
         run: |
           cd android
           chmod +x gradlew
+          export VERSION_CODE=${{ env.VERSION_CODE }}
+          export VERSION_NAME=${{ env.VERSION_NAME }}
+          export ANDROID_KEYSTORE_BASE64="${{ secrets.ANDROID_KEYSTORE_BASE64 }}"
+          export ANDROID_KEYSTORE_PATH="app/release.keystore"
+          export ANDROID_KEYSTORE_PASSWORD="${{ secrets.ANDROID_KEYSTORE_PASSWORD }}"
+          export ANDROID_KEY_ALIAS="${{ secrets.ANDROID_KEY_ALIAS }}"
+          export ANDROID_KEY_PASSWORD="${{ secrets.ANDROID_KEY_PASSWORD }}"
+          
           ./gradlew assembleDebug
+          if [ "$KEYSTORE_CREATED" = "true" ]; then
+            ./gradlew assembleRelease
+          fi
 
-      - name: 📤 Copy APK to downloads
+      - name: 📤 Copy APKs to downloads
         run: |
           mkdir -p downloads
-          cp android/app/build/outputs/apk/debug/app-debug.apk downloads/video-downloader.apk
-          echo "APK_SIZE=$(stat -c%s downloads/video-downloader.apk)" >> $GITHUB_OUTPUT
-        id: check-apk
+          # Debug APK (always built)
+          cp android/app/build/outputs/apk/debug/*.apk downloads/ 2>/dev/null || true
+          # Release APK (if signed)
+          cp android/app/build/outputs/apk/release/*.apk downloads/ 2>/dev/null || true
+          echo "📁 Downloads folder contents:"
+          ls -la downloads/
+          
+          # Set output for release notes
+          echo "APK_VERSION=v1.0.${{ github.run_number }}" >> $GITHUB_OUTPUT
+        id: apk-output
 
-      - name: 📤 Upload APK artifact
+      - name: 📤 Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
           name: video-downloader-apk
-          path: downloads/video-downloader.apk
+          path: downloads/*.apk
 
   build-windows:
     name: 🪟 Build Windows EXE
@@ -80,23 +109,16 @@ jobs:
       - name: 🏗️ Build web
         run: bun run build
 
-      - name: 🔧 Install electron-builder globally
-        run: bun install -g electron-builder
-
       - name: 🪟 Build EXE
         run: bun run build:exe
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📤 Copy EXEs to downloads
+        shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path downloads
-          if (Test-Path "dist_electron/*.exe") {
-            Copy-Item "dist_electron/*.exe" downloads/
-          }
-          if (Test-Path "dist_electron/*.exe") {
-            echo "EXE_FOUND=true" | Out-File -FilePath $env:GITHUB_ENV -Append
-          }
+          if (Test-Path "dist_electron/*.exe") { Copy-Item "dist_electron/*.exe" downloads/ }
 
       - name: 📤 Upload EXE artifacts
         uses: actions/upload-artifact@v4
@@ -108,7 +130,7 @@ jobs:
     name: 📦 Publish Release
     needs: [build-android, build-windows]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    if: github.ref == 'refs/heads/main'
 
     steps:
       - uses: actions/checkout@v4
@@ -134,20 +156,22 @@ jobs:
           body: |
             ## 📥 Video Downloader Pro v1.0.${{ github.run_number }}
 
-            **Yenilikler:** Otomatik derleme
+            **Otomatik derleme #${{ github.run_number }}**
 
             ### 📱 Android
-            - `video-downloader.apk` — Telefona kur, video indir
+            - `VideoDownloader-debug-1.0.${{ github.run_number }}.apk` — Test APK (debug)
+            - `VideoDownloader-release-1.0.${{ github.run_number }}.apk` — Play Store APK (imzalı) *varsa*
 
             ### 🪟 Windows
             - `Video-Downloader-Setup.exe` — Kurulumlu
-            - `Video-Downloader-Portable.exe` — Taşınabilir (USB'den çalışır)
+            - `Video-Downloader-Portable.exe` — Taşınabilir
 
-            **Nasıl kullanılır:** Videoyu indir → Kur/Kopyala → Link yapıştır → İndir! 🎉
-          files: |
-            downloads/video-downloader.apk
+            ### 🌐 Web
+            https://aliege00.github.io/video-dwnoader-byBEY/
+
+            **Kullanım:** Link yapıştır → İndir! 🎉
+          files: downloads/*.apk
           draft: false
           prerelease: false
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

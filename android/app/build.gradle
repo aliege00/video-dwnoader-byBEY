@@ -7,8 +7,8 @@ android {
         applicationId "com.videodownloader.pro"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode = System.getenv('VERSION_CODE')?.toInteger() ?: 1
+        versionName = System.getenv('VERSION_NAME') ?: "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +16,34 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+
+    signingConfigs {
+        release {
+            if (System.getenv('ANDROID_KEYSTORE_BASE64')) {
+                storeFile file(System.getenv('ANDROID_KEYSTORE_PATH') ?: 'release.keystore')
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (System.getenv('ANDROID_KEYSTORE_BASE64')) {
+                signingConfig signingConfigs.release
+            }
+        }
+        debug {
+            // Debug uses default Android debug keystore
+        }
+    }
+
+    applicationVariants.all { variant ->
+        variant.outputs.all {
+            outputFileName = "VideoDownloader-${variant.buildType.name}-${variant.versionName}.apk"
         }
     }
 }
